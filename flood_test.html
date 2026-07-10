@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Flood Risk Zone Checker</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+  #map { position: absolute; top: 0; bottom: 0; width: 100%; z-index: 1; }
+
+  #panel {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background: white;
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.2);
+    border-radius: 16px 16px 0 0;
+  }
+
+  #findBtn {
+    width: 100%;
+    padding: 16px;
+    font-size: 18px;
+    font-weight: 600;
+    color: white;
+    background: #1565c0;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  #findBtn:active { background: #0d47a1; }
+  #findBtn:disabled { background: #90a4ae; }
+
+  #result {
+    margin-top: 12px;
+    padding: 14px;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    text-align: center;
+    display: none;
+  }
+  .risk-high    { background: #ffebee; color: #b71c1c; }
+  .risk-mod     { background: #fff8e1; color: #e65100; }
+  .risk-low     { background: #fff3e0; color: #ef6c00; }
+  .safe         { background: #e8f5e9; color: #1b5e20; }
+  .info         { background: #e3f2fd; color: #0d47a1; }
+
+  .legend {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1000;
+    background: white;
+    padding: 10px 14px;
+    border-radius: 8px;
+    box-shadow: 0 1px 5px rgba(0,0,0,0.3);
+    font-size: 13px;
+    line-height: 1.8;
+  }
+  .legend .row { display: flex; align-items: center; }
+  .legend span.swatch {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    margin-right: 6px;
+    border-radius: 3px;
+    border: 1px solid rgba(0,0,0,0.3);
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="legend">
+  <div class="row"><span class="swatch" style="background:#e53935;"></span>High Risk</div>
+  <div class="row"><span class="swatch" style="background:#fb8c00;"></span>Moderate Risk</div>
+  <div class="row"><span class="swatch" style="background:#fdd835;"></span>Low Risk</div>
+</div>
+
+<div id="panel">
+  <button id="findBtn" onclick="checkMyLocation()">📍 Find Out My Flood Risk</button>
+  <div id="result"></div>
+</div>
+
+<script>
+// ============================================================
+// STEP 1: PASTE YOUR FLOOD ZONE GEOJSON HERE.
+// Every feature MUST have a "Risk" property set to
+// "High", "Moderate", or "Low" (exact spelling/case matters).
+// ============================================================
+const floodZoneGeoJSON = {
+"type": "FeatureCollection",
+"name": "test",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "id": 1, "Risk": "High" }, "geometry": { "type": "MultiPolygon", "coordinates": [ [ [ [ 79.900584450214708, 6.794710918267919 ], [ 79.900379048544664, 6.794703433533259 ], [ 79.900290480852078, 6.794780152057988 ], [ 79.900256561310215, 6.794834416372965 ], [ 79.900232063863342, 6.794924233156715 ], [ 79.900200028740457, 6.794993466916071 ], [ 79.900115229885884, 6.795087026034501 ], [ 79.90000781800336, 6.795143161496818 ], [ 79.899941863338697, 6.795193683407304 ], [ 79.899906059377827, 6.795240462949315 ], [ 79.899987089394486, 6.795337764382122 ], [ 79.900111461047899, 6.795326537294725 ], [ 79.900286712014093, 6.795304083119148 ], [ 79.900695630935189, 6.795206781679526 ], [ 79.900863344225428, 6.795150646224633 ], [ 79.900961334012976, 6.795073927759017 ], [ 79.900961334012976, 6.79494855853276 ], [ 79.900955680756013, 6.794864355302745 ], [ 79.90090291702424, 6.794810090991145 ], [ 79.900823771426616, 6.794813833357661 ], [ 79.900584450214708, 6.794710918267919 ] ] ] ] } },
+{ "type": "Feature", "properties": { "id": 2, "Risk": "Moderate" }, "geometry": { "type": "MultiPolygon", "coordinates": [ [ [ [ 79.900156687103689, 6.794783894424734 ], [ 79.90002666219327, 6.794957914446293 ], [ 79.899939978919704, 6.795043988842284 ], [ 79.899796763076338, 6.795135676768887 ], [ 79.899691235612835, 6.795261045946359 ], [ 79.899668622584926, 6.79537518800488 ], [ 79.899794878657374, 6.795487458855683 ], [ 79.900030431031269, 6.795493072397534 ], [ 79.900401661572531, 6.795410740443804 ], [ 79.900676786745294, 6.795320923750928 ], [ 79.901106434275306, 6.795238591767722 ], [ 79.901326911297289, 6.79514129031485 ], [ 79.901496509006506, 6.795014049923688 ], [ 79.901669875553708, 6.794866226485796 ], [ 79.901647262525799, 6.794776409691212 ], [ 79.901511584358431, 6.794662267490557 ], [ 79.901287338498449, 6.794579935394572 ], [ 79.90117427335899, 6.794551867631358 ], [ 79.900527917644979, 6.794520057497733 ], [ 79.900228295025343, 6.794514443944522 ], [ 79.900130305237809, 6.794712789451563 ], [ 79.900128420818803, 6.79471840300246 ], [ 79.900156687103689, 6.794783894424734 ] ] ] ] } },
+{ "type": "Feature", "properties": { "id": 3, "Risk": "Low" }, "geometry": { "type": "MultiPolygon", "coordinates": [ [ [ [ 79.899527291160567, 6.795204910497801 ], [ 79.899406688345124, 6.796028229753134 ], [ 79.902188090776292, 6.795541723090837 ], [ 79.902836330909309, 6.79492049079106 ], [ 79.902745878797731, 6.794359135613031 ], [ 79.901728292542415, 6.794164532331688 ], [ 79.900627791851505, 6.794291772947632 ], [ 79.900100154533931, 6.794366620353046 ], [ 79.899889099606909, 6.794628586180266 ], [ 79.89984387355112, 6.794823189273817 ], [ 79.89984387355112, 6.79490552132815 ], [ 79.89984387355112, 6.794913006059663 ], [ 79.899527291160567, 6.795204910497801 ] ] ] ] } }
+]
+};
+// ============================================================
+
+const initialZoom = 15;
+
+const riskColors = {
+  "High": "#e53935",
+  "Moderate": "#fb8c00",
+  "Low": "#fdd835"
+};
+
+// ---- Map setup ----
+const map = L.map('map', { zoomControl: true });
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+const floodLayer = L.geoJSON(floodZoneGeoJSON, {
+  style: (feature) => {
+    const risk = feature.properties.Risk;
+    return {
+      color: riskColors[risk] || '#999',
+      weight: 2,
+      fillColor: riskColors[risk] || '#999',
+      fillOpacity: 0.5
+    };
+  },
+  onEachFeature: (feature, layer) => {
+    const risk = feature.properties.Risk || 'Unknown';
+    layer.bindPopup(`Flood Risk: <b>${risk}</b>`);
+  }
+}).addTo(map);
+
+if (floodLayer.getBounds().isValid()) {
+  map.fitBounds(floodLayer.getBounds(), { padding: [30, 30] });
+} else {
+  map.setView([6.9271, 79.8612], initialZoom); // fallback: Colombo
+}
+
+let userMarker = null;
+
+function checkMyLocation() {
+  const btn = document.getElementById('findBtn');
+
+  if (!navigator.geolocation) {
+    showResult('info', 'Your browser does not support location. Please try a different browser.');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '📍 Locating...';
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      btn.disabled = false;
+      btn.textContent = '📍 Find Out My Flood Risk';
+
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const pt = turf.point([lng, lat]);
+
+      if (userMarker) map.removeLayer(userMarker);
+      userMarker = L.marker([lat, lng]).addTo(map)
+        .bindPopup('You are here').openPopup();
+      map.setView([lat, lng], 17);
+
+      let foundRisk = null;
+      floodZoneGeoJSON.features.forEach(f => {
+        if (turf.booleanPointInPolygon(pt, f)) {
+          foundRisk = f.properties.Risk;
+        }
+      });
+
+      if (foundRisk === 'High') {
+        showResult('risk-high', '⚠️ HIGH FLOOD RISK. You are in a high-risk zone — please follow local evacuation guidance.');
+      } else if (foundRisk === 'Moderate') {
+        showResult('risk-mod', '⚠️ MODERATE FLOOD RISK. Stay alert and monitor local updates.');
+      } else if (foundRisk === 'Low') {
+        showResult('risk-low', '⚠️ LOW FLOOD RISK. Some risk present — stay informed.');
+      } else {
+        showResult('safe', '✅ You are NOT inside any mapped flood risk zone.');
+      }
+    },
+    (err) => {
+      btn.disabled = false;
+      btn.textContent = '📍 Find Out My Flood Risk';
+      let msg = 'Could not get your location. ';
+      if (err.code === 1) msg += 'Please allow location/GPS permission for this site in your browser settings.';
+      else if (err.code === 2) msg += 'Location signal unavailable — try moving outdoors or check your GPS/data connection.';
+      else msg += 'Please try again.';
+      showResult('info', msg);
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+  );
+}
+
+function showResult(type, text) {
+  const result = document.getElementById('result');
+  result.className = type;
+  result.style.display = 'block';
+  result.textContent = text;
+}
+</script>
+
+</body>
+</html>
